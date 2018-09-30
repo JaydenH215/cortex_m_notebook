@@ -23,7 +23,7 @@ objdump可以查看elf格式文件的section的反汇编，这里我们比较.o�
 
 在链接之前，.o的.text section中的main部分是0x00000000，这是因为在未进行空间地址分配之前，.o的.text section起始地址就是0x00000000，这时候的地址只是一个保留值，链接时候会用一个有意义的虚拟内存地址（VMA）覆盖。
 
-为生成.axf文件，除了test.o，linker还会将一些库文件也加进来。Linker负责给这些代码分配空间和地址，图上的最后结果是main部分被分配到0x00400526（VMA），printf也有了的虚拟内存地址。对于程序来说，他会到自己的虚拟地址空间（VMA）取指令，然后执行。
+为生成.axf文件，除了test.o，linker还会将一些库文件也加进来。Linker负责给这些代码分配空间和地址，图上的最后结果是main部分被分配到0x00400526（VMA），printf也有了虚拟内存地址。对于程序来说，他会到自己的虚拟地址空间（VMA）取指令，然后执行。
 
 链接过程我们关心主要的是：地址和空间分配（Address and Storage）和重定位（Relocation）。
 
@@ -61,7 +61,7 @@ objdump可以查看elf格式文件的section的反汇编，这里我们比较.o�
 芯片跑程序的顺序是：
 1.	用工具链生成.axf文件；
 2.	然后用其他外部工具（例如objcopy）将.axf的RO section，RW section根据各自的LMA扣出来，组成一个.bin文件；
-3.	然后通过烧录工具，直接将.bin烧写到芯片的flash那里去。
+3.	然后通过烧录工具，直接将.bin烧写到芯片的flash那里去。（一般是FLASH的起始地址）
 
 以图 3.1为例，假设向量表映射到flash的地址0x00000，在烧写完.bin之后，芯片上电，CortexM内核决定了PC寄存器的值会从0x00004去取（也就是RO section的第二字），并开始执行程序，在程序开始执行之后不久，又会将LMA中的RW section移到VMA中，因为RO section的LMA等于VMA，所以不需要搬。有一个概念很重要：“LMA”中RO、RW的所在地址都是临时的，他们所在的真正位置（即链接时候设置的地址值）都必须在程序初始化时由相应程序，将他们移动到相应的地方（如果LMA！=VMA）。
 
@@ -72,7 +72,7 @@ objdump可以查看elf格式文件的section的反汇编，这里我们比较.o�
 2. 然后用其他外部工具（例如objcopy）将.axf的RO section，RW section根据各自的LMA扣出来，组成一个.bin文件；
 3. 然后通过烧录工具，直接将.bin烧写到“bootloader指定的flash地址”。
 
-以图 3.1为例，假设向量表映射到ROM的某个位置P，在烧写完.bin之后，芯片上电，CortexM决定了PC寄存器的值会从ROM中的P+0x0004取，这个PC值会导致跳到固化的bootloader中运行，然后在bootloader中会把“bootloader指定的flash地址”中的.bin文件搬运到“LMA中，即上图中的0x00000”，然后将PC寄存器的值指向第二个字，也就是RO section的第二字（0x00004），并开始执行程序，在程序开始执行之后不久，又会将LMA中的RW移到VMA中，因为RO section的LMA等于VMA，所以不需要搬。
+以图 3.1为例，假设向量表映射到ROM的某个位置P，在烧写完.bin之后，芯片上电，CortexM决定了PC寄存器的值会从ROM中的P+0x0004取，这个PC值会导致跳到固化的bootloader中运行，然后在bootloader中会把“bootloader指定的flash地址”中的.bin文件搬运到“LMA中，即上图Load View中的0x00000”，然后将PC寄存器的值指向第二个字，也就是RO section的第二字（0x00004），并开始执行程序，在程序开始执行之后不久，又会将LMA中的RW移到VMA中，因为RO section的LMA等于VMA，所以不需要搬。
 
 # 4 脚本文件
 
