@@ -9,7 +9,7 @@
 
 ## 2.1 文件的来龙去脉
     .c    ->    .o    ->    .axf    ->.bin
-由.c汇编成.s，再由.s编译成.o，然后由linker将各个.o链接成.axf（可执行文件），最后由objcopy抽取.axf中的各种（output section），生成.bin。
+由.c编译成.s，再由.s汇编成.o，然后由linker将各个.o链接成.axf（可执行文件），最后由objcopy抽取.axf中的各种（output section），生成.bin。
 
 ## 2.2 .o和.axf的关系
 ![2.1测试源代码](./pic/1.png)
