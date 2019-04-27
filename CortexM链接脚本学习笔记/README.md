@@ -8,7 +8,7 @@
 网上有不少关于分散加载文件（sct）以及链接脚本文件（ld）的介绍，其中也会涉及到许多编译原理的概念，但感觉都有点支离破碎，无法很好形成一个系统的理解，这里简单谈一下当前对这部分的理解，方便以后复习。
 
 ## 2.1 文件的来龙去脉
-    .c    ->    .o    ->    .axf    ->.bin
+    .c    ->    .s    ->    .o    ->    .axf    ->    .bin
 由.c编译成.s，再由.s汇编成.o，然后由linker将各个.o链接成.axf（可执行文件），最后由objcopy抽取.axf中的各种（output section），生成.bin。
 
 ## 2.2 .o和.axf的关系
@@ -45,7 +45,7 @@ objdump可以查看elf格式文件的section的反汇编，这里我们比较.o�
 
 ![3.1 左边为加载地址LMA视图，右边为虚拟地址VMA视图](./pic/4.png)
 
-与上一个例子不一样，这里的CPU从flash取指令，而不会先拷贝到RAM中运行，一般CortexM应用是不会用到loader的，那这种情况怎么跑程序呢？以上图为例：
+与上一个例子不一样，这里的CPU从flash取指令并执行（XIP），而不会先拷贝到RAM才运行，一般CortexM应用是不会用到loader的，那这种情况怎么跑程序呢？以上图为例：
 1.	最简单的方法就是将.axf文件中的RW section和ZI section扣出来烧写进RAM中对应的VMA，将RO section烧写进FLASH中对应的VMA。但是这样做只要掉电，RAM里面的数据就丢失了，需要再次下载，单单这一个原因就否决这种做法了。
 2.	将.axf文件中的RO section烧写进FLASH中对应的VMA，然后将RW section和ZI section也烧进FLASH，让程序在刚开始运行的时候，在启动文件中将RW section和ZI section搬到RAM中对应的VMA，然后正式开始执行，这种做法便是最普遍的使用方式。（一般ZI section不会烧写进flash，会在启动文件中直接赋0）
 
@@ -58,21 +58,26 @@ objdump可以查看elf格式文件的section的反汇编，这里我们比较.o�
 ![3.3 objcopy --help](./pic/6.png)
 
 没错，就是LMA！objcopy从最开始section的LMA开始，一直复制到到最尾section的LMA，中间没有代码的地方补0，最后生成.bin文件，也就是说对于这种情况，可以将.bin文件看成是LMA空间。
-芯片跑程序的顺序是：
+
+整个过程的顺序是：
 1.	用工具链生成.axf文件；
 2.	然后用其他外部工具（例如objcopy）将.axf的RO section，RW section根据各自的LMA扣出来，组成一个.bin文件；
 3.	然后通过烧录工具，直接将.bin烧写到芯片的flash那里去。（一般是FLASH的起始地址）
 
-以图 3.1为例，假设向量表映射到flash的地址0x00000，在烧写完.bin之后，芯片上电，CortexM内核决定了PC寄存器的值会从0x00004去取（也就是RO section的第二字），并开始执行程序，在程序开始执行之后不久，又会将LMA中的RW section移到VMA中，因为RO section的LMA等于VMA，所以不需要搬。有一个概念很重要：“LMA”中RO、RW的所在地址都是临时的，他们所在的真正位置（即链接时候设置的地址值）都必须在程序初始化时由相应程序，将他们移动到相应的地方（如果LMA！=VMA）。
+以图 3.1为例，假设向量表映射到flash的地址0x00000，在烧写完.bin之后，芯片上电，CortexM内核决定了PC寄存器的值会从0x00004去取（也就是RO section的第二字），并开始执行程序，在程序开始执行之后不久，启动文件中的程序（若是keil则是__main函数）又会将LMA中的RW section移到VMA中，因为RO section的LMA等于VMA，所以不需要搬。有一个概念很重要：“LMA”中RO、RW的所在地址都是临时的，他们所在的真正位置（即链接时候设置的地址值）都必须在程序初始化时由相应程序，将他们移动到相应的虚拟地址（如果LMA！=VMA）。
 
 ## 3.3 小型平台（CPU开始从ROM取指令，后面从RAM取指令跑代码）
-某些特别的CortexM应用跑代码是在RAM上跑的（也即从RAM上获取指令），当这样使用的时候一般芯片内部会有一个固化bootloader（存放在芯片ROM中的一段代码）来充当类似loader的角色。
 
+![带bootloader的开发平台](./pic/9.jpg)
+
+某些特别的CortexM应用跑代码是在RAM上跑的（也即从RAM上获取指令执行），当这样使用的时候一般芯片内部会有一个固化bootloader（存放在芯片ROM中的一段代码）来充当类似loader的角色。
+
+整个过程的顺序是：
 1. 用工具链生成.axf文件；
 2. 然后用其他外部工具（例如objcopy）将.axf的RO section，RW section根据各自的LMA扣出来，组成一个.bin文件；
 3. 然后通过烧录工具，直接将.bin烧写到“bootloader指定的flash地址”。
 
-以图 3.1为例，假设向量表映射到ROM的某个位置P，在烧写完.bin之后，芯片上电，CortexM决定了PC寄存器的值会从ROM中的P+0x0004取，这个PC值会导致跳到固化的bootloader中运行，然后在bootloader中会把“bootloader指定的flash地址”中的.bin文件搬运到“LMA中，即上图Load View中的0x00000”，然后将PC寄存器的值指向第二个字，也就是RO section的第二字（0x00004），并开始执行程序，在程序开始执行之后不久，又会将LMA中的RW移到VMA中，因为RO section的LMA等于VMA，所以不需要搬。
+假设向量表映射到ROM的某个位置P，在烧写完.bin之后，芯片上电，CortexM决定了PC寄存器的值会从ROM中的P+0x0004取，这个PC值会导致跳到固化的bootloader中运行，然后在bootloader中会把“bootloader指定的flash地址”中的.bin文件搬运到“LMA中，即上图Load View中的0x00000”，然后将PC寄存器的值指向第二个字，也就是RO section的第二字（0x00004），并开始执行程序，在程序开始执行之后不久，启动文件中的程序（若是keil则是__main函数）又会将LMA中的RW移到VMA中，因为RO section的LMA等于VMA，所以不需要搬。
 
 # 4 脚本文件
 
