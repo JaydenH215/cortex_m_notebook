@@ -79,6 +79,21 @@ objdump可以查看elf格式文件的section的反汇编，这里我们比较.o�
 
 假设向量表映射到ROM的某个位置P，在烧写完.bin之后，芯片上电，CortexM决定了PC寄存器的值会从ROM中的P+0x0004取，这个PC值会导致跳到固化的bootloader中运行，然后在bootloader中会把“bootloader指定的flash地址”中的.bin文件搬运到“LMA中，即上图Load View中的0x00000”，然后将PC寄存器的值指向第二个字，也就是RO section的第二字（0x00004），并开始执行程序，在程序开始执行之后不久，启动文件中的程序（若是keil则是__main函数）又会将LMA中的RW移到VMA中，因为RO section的LMA等于VMA，所以不需要搬。
 
+## 3.3 复杂小型平台（CPU开始从ROM取指令，后面从RAM取指令跑代码，也能从FLASH取指令跑代码）
+
+![带Cache平台](./pic/10.jpg)
+
+某些特别的CortexM应用跑代码是在RAM上跑的（也即从RAM上获取指令执行），当这样使用的时候一般芯片内部会有一个固化bootloader（存放在芯片ROM中的一段代码）来充当类似loader的角色。可以看见这里是直接从FLASH中的代码拷贝到RAM中运行的，大小相等，但是实际FLASH的大小一般比RAM大很多，而RAM的价格又很贵，所以需要一种方法实现“少容量的RAM+大容量的FLASH”的组合，这里就引入了一个叫Cache的东西。
+
+整个过程的顺序是：
+1. 用工具链生成.axf文件；
+2. 然后用其他外部工具（例如objcopy）将.axf的RO section，RW section根据各自的LMA扣出来，组成一个.bin文件；
+3. 然后通过烧录工具，直接将一部分.bin烧写到“bootloader指定的flash地址”；
+4. 烧录工具将另外一部分.bin烧写到“Cache Controller指定的flash地址”。
+
+假设向量表映射到ROM的某个位置P，在烧写完.bin之后，芯片上电，CortexM决定了PC寄存器的值会从ROM中的P+0x0004取，这个PC值会导致跳到固化的bootloader中运行，然后在bootloader中会把“bootloader指定的flash地址”中的.bin文件搬运到“LMA中，即上图Load View中的0x00000”，然后将PC寄存器的值指向第二个字，也就是RO section的第二字（0x00004），并开始执行程序，在程序开始执行之后不久，启动文件中的程序（若是keil则是__main函数）又会将LMA中的RW移到VMA中，因为RO section的LMA等于VMA，所以不需要搬。当在执行RO section代码时，有某条语句（Code1）需要访问B地址的代码，这时候总线便访问B地址的代码，这个会被映射到Cache Controller识别，Cache Controller从C地址将B地址的代码读出来，存放到自己的Cache RAM中，同时告诉Code1。下一次有其他代码（Code2）希望访问B地址的代码时候，就直接Cache RAM中的代码直接返回，而如果Code2访问Cache RAM中不存在的B地址区域其他代码，Cache Controller则会重新到C地址去寻找对应代码。通过这个机制，动态的修改Cache RAM的内容，实现“少容量的RAM+大容量的FLASH”组合。
+
+
 # 4 脚本文件
 
 ## 4.1 .ld（gcc的ld用）
